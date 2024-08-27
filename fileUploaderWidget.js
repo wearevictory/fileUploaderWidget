@@ -1,79 +1,117 @@
-// fileUploaderWidget.js
-
 export function initializeUploader(supabaseClient, options) {
-  const { bucketName, folderBaseName, onUploadSuccess, onUploadError, fileInputId, uploadButtonId } = options;
+  const {
+    bucketName,
+    folderBaseName,
+    fileInputId,
+    uploadButtonId,
+    fileDetailsContainerId,
+    onUploadSuccess,
+    onUploadError,
+  } = options;
 
-  // Get the existing file input and upload button elements by ID
   const fileInput = document.getElementById(fileInputId);
   const uploadButton = document.getElementById(uploadButtonId);
+  const fileDetailsContainer = document.getElementById(fileDetailsContainerId);
 
-  if (!fileInput) {
-    console.error(`File input with ID ${fileInputId} not found.`);
-    return;
-  }
+  let files = [];
+  let uploading = false;
 
-  if (!uploadButton) {
-    console.error(`Upload button with ID ${uploadButtonId} not found.`);
-    return;
-  }
+  fileInput.addEventListener('change', (event) => {
+    files = Array.from(event.target.files);
 
-  // Attach change event listener to the file input
-  fileInput.addEventListener('change', async (event) => {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
+    if (files.length > 0) {
+      displayFileDetails(files, fileDetailsContainer);
 
-    try {
-      let folderName = 'Primary';
-      if (files.length > 1) {
-        folderName = await getNewFolderName(supabaseClient, folderBaseName);
+      if (!uploading) {
+        uploadButton.click();
       }
-
-      // Trigger the upload button click automatically
-      uploadButton.click();
-
-      const fileURLs = await uploadFiles(supabaseClient, files, bucketName, folderName);
-
-      if (onUploadSuccess) {
-        onUploadSuccess(fileURLs);
-      }
-
-      alert('Files uploaded successfully.');
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      if (onUploadError) {
-        onUploadError(error);
-      }
-      alert(`Error uploading files: ${error.message}`);
     }
   });
 
-  // Attach click event listener to the upload button
   uploadButton.addEventListener('click', async () => {
-    if (fileInput.files.length === 0) {
-      console.error('No files selected.');
-      return;
-    }
+    if (uploading) return;
+    uploading = true;
+    uploadButton.textContent = 'Uploading...';
+    uploadButton.disabled = true;
 
     try {
-      let folderName = 'Primary';
-      if (fileInput.files.length > 1) {
-        folderName = await getNewFolderName(supabaseClient, folderBaseName);
+      let folderName = folderBaseName;
+      if (files.length > 1) {
+        folderName = await getNewFolderName(supabaseClient, bucketName, folderBaseName);
       }
 
-      const files = Array.from(fileInput.files);
-      const fileURLs = await uploadFiles(supabaseClient, files, bucketName, folderName);
-
-      if (onUploadSuccess) {
-        onUploadSuccess(fileURLs);
-      }
-
-      alert('Files uploaded successfully.');
+      const fileURLs = await uploadFiles(supabaseClient, bucketName, folderName, files);
+      onUploadSuccess(fileURLs);
     } catch (error) {
-      console.error('Error uploading files:', error);
-      if (onUploadError) {
-        onUploadError(error);
-      }
-      alert(`Error uploading files: ${error.message}`);
+      onUploadError(error);
+    } finally {
+      uploading = false;
+      uploadButton.textContent = 'Upload';
+      uploadButton.disabled = false;
     }
   });
+
+  function displayFileDetails(files, container) {
+    const fileNames = files.map(file => file.name).join(', ');
+    const totalSize = files.reduce((acc, file) => acc + file.size, 0);
+    container.innerHTML = `
+      <p>Files: ${fileNames}</p>
+      <p>Total Size: ${(totalSize / (1024 * 1024)).toFixed(2)} MB</p>
+      <button id="removeButton">Remove</button>
+    `;
+
+    const removeButton = container.querySelector('#removeButton');
+    removeButton.addEventListener('click', () => {
+      fileInput.value = '';
+      container.innerHTML = '';
+      files = [];
+    });
+  }
+
+  async function uploadFiles(supabaseClient, bucketName, folderName, files) {
+    const uploadPromises = files.map(async (file) => {
+      const timestamp = new Date();
+      const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
+
+      const fileName = `${formattedDate}-${file.name}`;
+      const filePath = `${folderName}/${fileName}`;
+
+      const { data, error } = await supabaseClient.storage
+        .from(bucketName)
+        .upload(filePath, file);
+
+      if (error) {
+        throw new Error(`Error uploading ${file.name}: ${error.message}`);
+      }
+
+      const { data: urlData, error: urlError } = await supabaseClient.storage
+        .from(bucketName)
+        .getPublicUrl(filePath);
+
+      if (urlError) {
+        throw new Error(`Error getting URL for ${file.name}: ${urlError.message}`);
+      }
+
+      return urlData.publicUrl;
+    });
+
+    return Promise.all(uploadPromises);
+  }
+
+  async function getNewFolderName(supabaseClient, bucketName, folderBaseName) {
+    let index = 0;
+    let folderExists = true;
+
+    while (folderExists) {
+      index++;
+      const folderName = `${folderBaseName}-${index}`;
+      const { data, error } = await supabaseClient.storage
+        .from(bucketName)
+        .list(folderName);
+
+      folderExists = !error && data && data.length > 0;
+    }
+
+    return `${folderBaseName}-${index}`;
+  }
 }
