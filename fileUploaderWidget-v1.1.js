@@ -1,127 +1,95 @@
-export function initializeUploader(supabaseClient, options) {
-  const { bucketName, folderBaseName, onUploadSuccess, onUploadError, fileInputId, uploadButtonId } = options;
+// uploader-v1.js
 
-  // Get the existing file input and upload button elements by ID
-  const fileInput = document.getElementById(fileInputId);
-  const uploadButton = document.getElementById(uploadButtonId);
+export function initializeUploader(supabaseClient, {
+  bucketName,
+  folderBaseName,
+  inputFileId,
+  uploadButtonId,
+  onUploadSuccess,
+  onUploadError,
+}) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById(inputFileId);
+    const uploadButton = document.getElementById(uploadButtonId);
+    let files = [];
+    let uploading = false;
 
-  if (!fileInput) {
-    console.error(`File input with ID ${fileInputId} not found.`);
-    return;
-  }
+    fileInput.addEventListener('change', async (event) => {
+      files = Array.from(event.target.files);
 
-  if (!uploadButton) {
-    console.error(`Upload button with ID ${uploadButtonId} not found.`);
-    return;
-  }
-
-  // Attach change event listener to the file input
-  fileInput.addEventListener('change', async (event) => {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
-
-    try {
-      let folderName = 'Primary';
-      if (files.length > 1) {
-        folderName = await getNewFolderName(supabaseClient, folderBaseName);
+      if (files.length > 0) {
+        if (!uploading) {
+          uploadButton.click(); // Automatically trigger the upload
+        }
       }
-
-      // Trigger the upload button click automatically
-      uploadButton.click();
-
-      const fileURLs = await uploadFiles(supabaseClient, files, bucketName, folderName);
-
-      if (onUploadSuccess) {
-        onUploadSuccess(fileURLs);
-      }
-
-      alert('Files uploaded successfully.');
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      if (onUploadError) {
-        onUploadError(error);
-      }
-      alert(`Error uploading files: ${error.message}`);
-    }
-  });
-
-  // Attach click event listener to the upload button
-  uploadButton.addEventListener('click', async () => {
-    if (fileInput.files.length === 0) {
-      console.error('No files selected.');
-      return;
-    }
-
-    try {
-      let folderName = 'Primary';
-      if (fileInput.files.length > 1) {
-        folderName = await getNewFolderName(supabaseClient, folderBaseName);
-      }
-
-      const files = Array.from(fileInput.files);
-      const fileURLs = await uploadFiles(supabaseClient, files, bucketName, folderName);
-
-      if (onUploadSuccess) {
-        onUploadSuccess(fileURLs);
-      }
-
-      alert('Files uploaded successfully.');
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      if (onUploadError) {
-        onUploadError(error);
-      }
-      alert(`Error uploading files: ${error.message}`);
-    }
-  });
-
-  async function getNewFolderName(supabaseClient, folderBaseName) {
-    let index = 0;
-    let folderExists = true;
-
-    while (folderExists) {
-      index++;
-      const folderName = `${folderBaseName}-${index}`;
-      const { data, error } = await supabaseClient.storage
-        .from(bucketName)
-        .list(folderName);
-
-      folderExists = !error && data && data.length > 0;
-    }
-
-    return `${folderBaseName}-${index}`;
-  }
-
-  async function uploadFiles(supabaseClient, files, bucketName, folderName) {
-    const uploadPromises = files.map(async (file) => {
-      const timestamp = new Date();
-      const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
-      const fileName = `${formattedDate}-${file.name}`;
-      const filePath = `${folderName}/${fileName}`;
-
-      console.log(`Uploading file: ${file.name} to ${filePath}`);
-
-      const { data, error } = await supabaseClient.storage
-        .from(bucketName)
-        .upload(filePath, file);
-
-      if (error) {
-        console.error(`Error uploading ${file.name}:`, error.message);
-        throw error;
-      }
-
-      const { data: urlData, error: urlError } = await supabaseClient.storage
-        .from(bucketName)
-        .getPublicUrl(filePath);
-
-      if (urlError) {
-        console.error(`Error getting URL for ${file.name}:`, urlError.message);
-        throw urlError;
-      }
-
-      return urlData.publicUrl;
     });
 
-    return Promise.all(uploadPromises);
-  }
+    uploadButton.addEventListener('click', async () => {
+      if (uploading || files.length === 0) return;
+      uploading = true;
+      uploadButton.textContent = 'Uploading...';
+      uploadButton.disabled = true;
+
+      try {
+        let folderName = folderBaseName;
+        if (files.length > 1) {
+          folderName = await getNewFolderName(supabaseClient, bucketName, folderBaseName);
+        }
+
+        const uploadPromises = files.map(async (file) => {
+          const timestamp = new Date();
+          const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
+
+          const fileName = `${formattedDate}-${file.name}`;
+          const filePath = `${folderName}/${fileName}`;
+
+          const { data, error } = await supabaseClient.storage
+            .from(bucketName)
+            .upload(filePath, file);
+
+          if (error) {
+            throw error;
+          }
+
+          const { data: urlData, error: urlError } = await supabaseClient.storage
+            .from(bucketName)
+            .getPublicUrl(filePath);
+
+          if (urlError) {
+            throw urlError;
+          }
+
+          return urlData.publicUrl;
+        });
+
+        const fileURLs = await Promise.all(uploadPromises);
+
+        onUploadSuccess(fileURLs);
+      } catch (error) {
+        onUploadError(error);
+      } finally {
+        uploading = false;
+        uploadButton.textContent = 'Upload';
+        uploadButton.disabled = false;
+        files = []; // Reset files array after upload
+      }
+    });
+
+    async function getNewFolderName(supabaseClient, bucketName, folderBaseName) {
+      let index = 0;
+      let folderExists = true;
+
+      while (folderExists) {
+        index++;
+        const folderName = `${folderBaseName}-${index}`;
+        const { data, error } = await supabaseClient.storage
+          .from(bucketName)
+          .list(folderName);
+
+        folderExists = !error && data && data.length > 0;
+      }
+
+      return `${folderBaseName}-${index}`;
+    }
+  });
 }
