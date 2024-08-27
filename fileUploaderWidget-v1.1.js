@@ -1,5 +1,3 @@
-// fileUploaderWidget.js
-
 export function initializeUploader(supabaseClient, options) {
   const { bucketName, folderBaseName, onUploadSuccess, onUploadError, fileInputId, uploadButtonId } = options;
 
@@ -76,4 +74,54 @@ export function initializeUploader(supabaseClient, options) {
       alert(`Error uploading files: ${error.message}`);
     }
   });
+
+  async function getNewFolderName(supabaseClient, folderBaseName) {
+    let index = 0;
+    let folderExists = true;
+
+    while (folderExists) {
+      index++;
+      const folderName = `${folderBaseName}-${index}`;
+      const { data, error } = await supabaseClient.storage
+        .from(bucketName)
+        .list(folderName);
+
+      folderExists = !error && data && data.length > 0;
+    }
+
+    return `${folderBaseName}-${index}`;
+  }
+
+  async function uploadFiles(supabaseClient, files, bucketName, folderName) {
+    const uploadPromises = files.map(async (file) => {
+      const timestamp = new Date();
+      const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
+      const fileName = `${formattedDate}-${file.name}`;
+      const filePath = `${folderName}/${fileName}`;
+
+      console.log(`Uploading file: ${file.name} to ${filePath}`);
+
+      const { data, error } = await supabaseClient.storage
+        .from(bucketName)
+        .upload(filePath, file);
+
+      if (error) {
+        console.error(`Error uploading ${file.name}:`, error.message);
+        throw error;
+      }
+
+      const { data: urlData, error: urlError } = await supabaseClient.storage
+        .from(bucketName)
+        .getPublicUrl(filePath);
+
+      if (urlError) {
+        console.error(`Error getting URL for ${file.name}:`, urlError.message);
+        throw urlError;
+      }
+
+      return urlData.publicUrl;
+    });
+
+    return Promise.all(uploadPromises);
+  }
 }
