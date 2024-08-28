@@ -1,15 +1,28 @@
-export function initializeUploader(supabaseClient, options) {
-  const fileInput = document.getElementById(options.fileInputId);
-  const uploadButton = document.getElementById(options.uploadButtonId);
-  const fileDetails = document.getElementById(options.fileDetailsId);
-  const fileNameDisplay = document.getElementById(options.fileNameDisplayId);
-  const fileSizeDisplay = document.getElementById(options.fileSizeDisplayId);
-  const removeButton = document.getElementById(options.removeButtonId);
+export function initializeUploader(options) {
+  const {
+    supabaseClient,
+    bucketName,
+    folderBaseName,
+    fileInputId,
+    uploadButtonId,
+    fileDetailsContainerId,
+    fileURLContainerId,
+    removeButtonId,
+    onUploadSuccess,
+    onUploadError
+  } = options;
+
+  const fileInput = document.getElementById(fileInputId);
+  const uploadButton = document.getElementById(uploadButtonId);
+  const fileURLContainer = document.getElementById(fileURLContainerId);
+  const fileDetails = document.getElementById(fileDetailsContainerId);
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const fileSizeDisplay = document.getElementById('fileSizeDisplay');
+  const removeButton = document.getElementById(removeButtonId);
 
   let files = [];
   let uploading = false;
 
-  // Handle file selection
   fileInput.addEventListener('change', (event) => {
     files = Array.from(event.target.files);
 
@@ -22,7 +35,7 @@ export function initializeUploader(supabaseClient, options) {
       removeButton.style.display = 'block';
 
       if (!uploading) {
-        uploadButton.click();  // Automatically trigger the upload
+        uploadButton.click();
       }
     }
   });
@@ -34,22 +47,25 @@ export function initializeUploader(supabaseClient, options) {
     uploadButton.disabled = true;
 
     try {
-      let folderName = options.folderBaseName;
+      const timestamp = new Date();
+      const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
+
+      // Determine folder name based on the number of files
+      let folderName = folderBaseName;
       if (files.length > 1) {
-        folderName = await getNewFolderName(supabaseClient, options.bucketName, folderName);
+        folderName = await getNewFolderName(formattedDate); // Creates a new subfolder if multiple files are being uploaded
       }
 
+      // Upload each file
       const uploadPromises = files.map(async (file) => {
-        const timestamp = new Date();
-        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
-
+        // Unique file name with timestamp
         const fileName = `${formattedDate}-${file.name}`;
         const filePath = `${folderName}/${fileName}`;
 
         console.log(`Uploading file: ${file.name} to ${filePath}`);
 
         const { data, error } = await supabaseClient.storage
-          .from(options.bucketName)
+          .from(bucketName)
           .upload(filePath, file);
 
         if (error) {
@@ -58,7 +74,7 @@ export function initializeUploader(supabaseClient, options) {
         }
 
         const { data: urlData, error: urlError } = await supabaseClient.storage
-          .from(options.bucketName)
+          .from(bucketName)
           .getPublicUrl(filePath);
 
         if (urlError) {
@@ -72,10 +88,24 @@ export function initializeUploader(supabaseClient, options) {
       const fileURLs = await Promise.all(uploadPromises);
       console.log('Uploaded file URLs:', fileURLs);
 
-      options.onUploadSuccess(fileURLs);
+      if (fileURLContainer) {
+        fileURLContainer.value = fileURLs.join('\n');
+      } else {
+        console.error('fileURLContainer is null');
+      }
+
+      if (onUploadSuccess) {
+        onUploadSuccess(fileURLs);
+      }
+
+      alert('Files uploaded successfully.');
     } catch (error) {
       console.error('Error uploading files:', error);
-      options.onUploadError(error);
+      if (onUploadError) {
+        onUploadError(error);
+      } else {
+        console.log(`Error uploading files: ${error.message}`);
+      }
     } finally {
       uploading = false;
       uploadButton.textContent = 'Upload';
@@ -83,21 +113,13 @@ export function initializeUploader(supabaseClient, options) {
     }
   });
 
-  removeButton.addEventListener('click', () => {
-    fileInput.value = '';
-    fileNameDisplay.textContent = '';
-    fileSizeDisplay.textContent = '';
-    fileDetails.style.display = 'none';
-    removeButton.style.display = 'none';
-  });
-
-  async function getNewFolderName(supabaseClient, bucketName, folderBaseName) {
+  async function getNewFolderName(formattedDate) {
     let index = 0;
     let folderExists = true;
 
     while (folderExists) {
       index++;
-      const folderName = `${folderBaseName}-${index}`;
+      const folderName = `${folderBaseName}-${formattedDate}-${index}`;
       const { data, error } = await supabaseClient.storage
         .from(bucketName)
         .list(folderName);
@@ -105,6 +127,17 @@ export function initializeUploader(supabaseClient, options) {
       folderExists = !error && data && data.length > 0;
     }
 
-    return `${folderBaseName}-${index}`;
+    return `${folderBaseName}-${formattedDate}-${index}`;
+  }
+
+  if (removeButton) {
+    removeButton.addEventListener('click', () => {
+      fileInput.value = '';
+      fileURLContainer.value = '';
+      fileNameDisplay.textContent = '';
+      fileSizeDisplay.textContent = '';
+      fileDetails.style.display = 'none';
+      removeButton.style.display = 'none';
+    });
   }
 }
