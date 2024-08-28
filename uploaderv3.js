@@ -1,5 +1,17 @@
+// fileUploader.js
 export function initializeUploader(options) {
-  const { supabaseClient, bucketName, folderBaseName, fileInputId, uploadButtonId, fileDetailsContainerId, fileURLContainerId, removeButtonId, onUploadSuccess, onUploadError } = options;
+  const {
+    supabaseClient,
+    bucketName,
+    folderBaseName,
+    fileInputId,
+    uploadButtonId,
+    fileDetailsContainerId,
+    fileURLContainerId,
+    removeButtonId,
+    onUploadSuccess,
+    onUploadError
+  } = options;
 
   const fileInput = document.getElementById(fileInputId);
   const uploadButton = document.getElementById(uploadButtonId);
@@ -36,18 +48,20 @@ export function initializeUploader(options) {
     uploadButton.disabled = true;
 
     try {
-      // Determine folder name based on number of files
-      let folderName = folderBaseName; // Base folder name is set to 'Primary'
+      // Determine folder name based on the number of files
+      let folderName = folderBaseName;
       if (files.length > 1) {
-        folderName = await getNewFolderName();
+        folderName = await getNewFolderName(); // Creates a new subfolder if multiple files are being uploaded
       }
 
+      // Upload each file
       const uploadPromises = files.map(async (file) => {
         const timestamp = new Date();
-        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
-
+        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
+        
+        // Unique file name with timestamp
         const fileName = `${formattedDate}-${file.name}`;
-        const filePath = `${folderName}/${fileName}`; // File path including folder name
+        const filePath = `${folderName}/${fileName}`;
 
         console.log(`Uploading file: ${file.name} to ${filePath}`);
 
@@ -106,7 +120,7 @@ export function initializeUploader(options) {
 
     while (folderExists) {
       index++;
-      const folderName = `${folderBaseName}-${index}`;
+      const folderName = `${folderBaseName}-${formattedDate}-${index}`;
       const { data, error } = await supabaseClient.storage
         .from(bucketName)
         .list(folderName);
@@ -114,7 +128,7 @@ export function initializeUploader(options) {
       folderExists = !error && data && data.length > 0;
     }
 
-    return `${folderBaseName}-${index}`;
+    return `${folderBaseName}-${formattedDate}-${index}`;
   }
 
   if (removeButton) {
