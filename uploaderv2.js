@@ -1,4 +1,3 @@
-// fileUploader.js
 export function initializeUploader(options) {
   const { supabaseClient, bucketName, folderBaseName, fileInputId, uploadButtonId, fileDetailsContainerId, fileURLContainerId, removeButtonId, onUploadSuccess, onUploadError } = options;
 
@@ -37,17 +36,18 @@ export function initializeUploader(options) {
     uploadButton.disabled = true;
 
     try {
-      let folderName = folderBaseName;
+      // Determine folder name based on number of files
+      let folderName = folderBaseName; // Base folder name is set to 'Primary'
       if (files.length > 1) {
-        folderName = await getNewFolderName();
+        // If multiple files, create a subfolder with the current date
+        const timestamp = new Date();
+        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
+        folderName = `${folderBaseName}/${formattedDate}`; // Subfolder with date
       }
 
       const uploadPromises = files.map(async (file) => {
-        const timestamp = new Date();
-        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}-${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
-
-        const fileName = `${formattedDate}-${file.name}`;
-        const filePath = `${folderName}/${fileName}`;
+        const fileName = `${file.name}`;
+        const filePath = `${folderName}/${fileName}`; // File path including folder name
 
         console.log(`Uploading file: ${file.name} to ${filePath}`);
 
