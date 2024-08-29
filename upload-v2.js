@@ -47,18 +47,21 @@ export function initializeUploader(options) {
     uploadButton.disabled = true;
 
     try {
-      let folderName = folderBaseName;
-
       // Determine folder name based on the number of files
+      let folderName = folderBaseName;
       if (files.length > 1) {
-        const timestamp = new Date();
-        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
-        folderName = `${folderBaseName}/${formattedDate}`;
+        folderName = await getNewFolderName(folderBaseName); // Creates a new subfolder if multiple files are being uploaded
       }
 
       // Upload each file
       const uploadPromises = files.map(async (file) => {
-        const filePath = `${folderName}/${file.name}`;
+        const timestamp = new Date();
+        const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
+        const formattedTime = `${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
+
+        // Unique file name with date and timestamp
+        const fileName = `${formattedDate}-${formattedTime}-${file.name}`;
+        const filePath = `${folderName}/${fileName}`;
 
         console.log(`Uploading file: ${file.name} to ${filePath}`);
 
@@ -110,6 +113,25 @@ export function initializeUploader(options) {
       uploadButton.disabled = false;
     }
   });
+
+  async function getNewFolderName(baseName) {
+    const timestamp = new Date();
+    const formattedDate = `${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}${timestamp.getFullYear().toString().slice(2)}`;
+    let index = 0;
+    let folderExists = true;
+
+    while (folderExists) {
+      index++;
+      const folderName = `${baseName}-${formattedDate}-${index}`;
+      const { data, error } = await supabaseClient.storage
+        .from(bucketName)
+        .list(folderName);
+
+      folderExists = !error && data && data.length > 0;
+    }
+
+    return `${baseName}-${formattedDate}-${index}`;
+  }
 
   if (removeButton) {
     removeButton.addEventListener('click', () => {
